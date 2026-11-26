@@ -1,0 +1,8 @@
+# Historial de exámenes local (datos personales de cada uno)
+historial/
+
+# Manual original (pesa ~8 MB y es material del Municipio)
+*.pdf
+
+node_modules/
+.claude/
