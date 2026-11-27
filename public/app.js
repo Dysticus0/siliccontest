@@ -11,6 +11,7 @@
   const KEY_EN_CURSO = 'simulacro.examenEnCurso';
   const KEY_HIST = 'simulacro.historial';
   const KEY_NOMBRE = 'simulacro.nombre';
+  const KEY_PRO = 'simulacro.incluirProfesionales';
 
   const app = document.getElementById('app');
   let banco = [];
@@ -100,10 +101,15 @@
   };
 
   /* ---------- armado del examen ---------- */
+  // Preguntas disponibles según se incluyan o no las de licencias profesionales (C, D y E).
+  function bancoDisponible(incluirProfesionales) {
+    return incluirProfesionales ? banco : banco.filter((q) => !q.profesional);
+  }
+
   // Toma preguntas repartidas entre todos los temas para cubrir todo el manual.
-  function elegirPreguntas(cantidad) {
+  function elegirPreguntas(cantidad, incluirProfesionales) {
     const porTema = {};
-    banco.forEach((q) => { (porTema[q.tema] = porTema[q.tema] || []).push(q); });
+    bancoDisponible(incluirProfesionales).forEach((q) => { (porTema[q.tema] = porTema[q.tema] || []).push(q); });
     const grupos = shuffle(Object.values(porTema).map(shuffle));
     const elegidas = [];
     let quedan = true;
@@ -128,16 +134,18 @@
       correcta: orden.indexOf(q.correcta),
       explicacion: q.explicacion,
       pagina: q.pagina,
+      profesional: !!q.profesional,
     };
   }
 
-  function iniciarExamen(nombre, cantidad) {
+  function iniciarExamen(nombre, cantidad, incluirProfesionales) {
     examen = {
       id: nuevoId(),
       nombre: nombre || 'Sin nombre',
       inicio: new Date().toISOString(),
       umbral: CONFIG.umbralAprobacion,
-      preguntas: elegirPreguntas(cantidad).map(prepararPregunta),
+      incluyeProfesionales: incluirProfesionales,
+      preguntas: elegirPreguntas(cantidad, incluirProfesionales).map(prepararPregunta),
       respuestas: [],
       actual: 0,
     };
@@ -170,6 +178,7 @@
       umbral: ex.umbral,
       minimoCorrectas: minimo,
       aprobado: correctas >= minimo,
+      incluyeProfesionales: !!ex.incluyeProfesionales,
       preguntas,
     };
   }
@@ -196,12 +205,18 @@
     setNav('inicio');
     const enCurso = lsGet(KEY_EN_CURSO, null);
     const nombre = lsGet(KEY_NOMBRE, '');
+    const incluirPro = lsGet(KEY_PRO, false) === true;
+    const cantPro = banco.filter((q) => q.profesional).length;
+    const textoBanco = (pro) => {
+      const disp = bancoDisponible(pro);
+      return `Preguntas multiple choice elegidas al azar de un banco de <b>${disp.length}</b> preguntas, repartidas entre ${new Set(disp.map((q) => q.tema)).size} temas.`;
+    };
     app.innerHTML = `
       <section class="card">
         <h1>Simulacro del examen teórico</h1>
         <p class="muted">Practicá para la licencia de conducir del Municipio de San Isidro con preguntas basadas en el Manual de Educación Vial.</p>
         <ul class="rules">
-          <li>Preguntas multiple choice elegidas al azar de un banco de <b>${banco.length}</b> preguntas, repartidas entre ${new Set(banco.map((q) => q.tema)).size} temas.</li>
+          <li id="texto-banco">${textoBanco(incluirPro)}</li>
           <li>Para aprobar necesitás al menos el <b>${CONFIG.umbralAprobacion}%</b> de respuestas correctas.</li>
           <li>Al terminar ves cada corrección, la respuesta correcta y en qué página del manual está.</li>
           <li>Cada examen queda guardado en el historial.</li>
@@ -225,16 +240,32 @@
               ${CONFIG.opcionesCantidad.map((n) => `<option value="${n}" ${n === CONFIG.cantidadPorDefecto ? 'selected' : ''}>${n}${n === CONFIG.cantidadPorDefecto ? ' (como el examen real)' : ''}</option>`).join('')}
             </select>
           </div>
+          <div class="field">
+            <label class="check" for="incluir-pro">
+              <input type="checkbox" id="incluir-pro" ${incluirPro ? 'checked' : ''}>
+              <span>
+                Incluir preguntas de licencias profesionales
+                <span class="check-help">Clases C, D y E: camiones, colectivos, taxis y remises (${cantPro} preguntas).</span>
+              </span>
+            </label>
+          </div>
           <button class="btn btn-primary" type="submit">Comenzar examen</button>
         </form>
       </section>`;
+
+    const chkPro = document.getElementById('incluir-pro');
+    chkPro.addEventListener('change', () => {
+      lsSet(KEY_PRO, chkPro.checked);
+      document.getElementById('texto-banco').innerHTML = textoBanco(chkPro.checked);
+    });
 
     document.getElementById('form-inicio').addEventListener('submit', (e) => {
       e.preventDefault();
       const n = document.getElementById('nombre').value.trim();
       lsSet(KEY_NOMBRE, n);
+      lsSet(KEY_PRO, chkPro.checked);
       if (enCurso && !confirm('Se va a descartar el examen sin terminar. ¿Seguir?')) return;
-      iniciarExamen(n, Number(document.getElementById('cantidad').value));
+      iniciarExamen(n, Number(document.getElementById('cantidad').value), chkPro.checked);
     });
     if (enCurso) {
       document.getElementById('btn-continuar').onclick = () => { examen = enCurso; renderExamen(); };
@@ -318,7 +349,7 @@
           <div class="score ${cls}">${res.porcentaje}%</div>
           <div>
             <p class="verdict ${cls}">${res.aprobado ? 'APROBADO' : 'NO APROBADO'}</p>
-            <p class="muted" style="margin:4px 0 0">${esc(res.nombre)} · ${fmtFecha(res.fecha)}</p>
+            <p class="muted" style="margin:4px 0 0">${esc(res.nombre)} · ${fmtFecha(res.fecha)} · ${res.incluyeProfesionales ? 'Con preguntas profesionales' : 'Sin preguntas profesionales'}</p>
             <p style="margin:4px 0 0">Respondiste bien <b>${res.correctas} de ${res.total}</b>. Necesitabas al menos ${res.minimoCorrectas} (${res.umbral}%).</p>
           </div>
         </div>
@@ -355,7 +386,7 @@
       ${lista.map(({ q, n }) => `
         <article class="card review ${q.acierto ? 'ok' : 'bad'}">
           <div class="review-head">
-            <span class="muted small">Pregunta ${n + 1} · ${esc(q.tema)}</span>
+            <span class="muted small">Pregunta ${n + 1} · ${esc(q.tema)}${q.profesional ? ' · Licencias profesionales' : ''}</span>
             ${q.acierto ? '<span class="badge ok">Correcta</span>'
               : q.elegida === null ? '<span class="badge warn">Sin responder</span>' : '<span class="badge bad">Incorrecta</span>'}
           </div>
@@ -410,7 +441,7 @@
           <div class="hist-item">
             <div>
               <div class="when">${fmtFecha(e.fecha)} · ${esc(e.nombre)}</div>
-              <div class="small muted">${e.correctas}/${e.total} correctas · ${e.porcentaje}% · ${fmtDuracion(e.duracionSeg)}</div>
+              <div class="small muted">${e.correctas}/${e.total} correctas · ${e.porcentaje}% · ${fmtDuracion(e.duracionSeg)}${e.incluyeProfesionales ? ' · Con profesionales' : ''}</div>
             </div>
             <div class="btn-row">
               <span class="badge ${e.aprobado ? 'ok' : 'bad'}" style="align-self:center">${e.aprobado ? 'Aprobado' : 'No aprobado'}</span>
