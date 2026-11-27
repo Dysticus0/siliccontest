@@ -6,12 +6,14 @@
     cantidadPorDefecto: 40,
     umbralAprobacion: 70, // porcentaje mínimo de respuestas correctas
     opcionesCantidad: [10, 20, 40, 60],
+    senalesAlFinal: 10, // en el examen general, señales que se agregan después de las preguntas teóricas
   };
   const LETRAS = 'ABCDE';
   const KEY_EN_CURSO = 'simulacro.examenEnCurso';
   const KEY_HIST = 'simulacro.historial';
   const KEY_NOMBRE = 'simulacro.nombre';
   const KEY_PRO = 'simulacro.incluirProfesionales';
+  const KEY_MODO = 'simulacro.modo';
 
   const app = document.getElementById('app');
   let banco = [];
@@ -101,15 +103,26 @@
   };
 
   /* ---------- armado del examen ---------- */
-  // Preguntas disponibles según se incluyan o no las de licencias profesionales (C, D y E).
-  function bancoDisponible(incluirProfesionales) {
-    return incluirProfesionales ? banco : banco.filter((q) => !q.profesional);
+  // Preguntas disponibles según el tipo de examen y si se incluyen las de licencias profesionales (C, D y E).
+  // modo 'general': preguntas teóricas (sin señales); modo 'senales': solo preguntas con imagen.
+  function bancoDisponible(incluirProfesionales, modo) {
+    if (modo === 'senales') return banco.filter((q) => q.imagen);
+    return banco.filter((q) => !q.imagen && (incluirProfesionales || !q.profesional));
+  }
+
+  // Examen general: las preguntas teóricas y, al final, un bloque aparte de señales.
+  // Examen de señales: solo señales.
+  function elegirPreguntas(cantidad, incluirProfesionales, modo) {
+    if (modo === 'senales') return repartirPorTema(bancoDisponible(false, 'senales'), cantidad);
+    const teoricas = repartirPorTema(bancoDisponible(incluirProfesionales, 'general'), cantidad);
+    const senales = shuffle(banco.filter((q) => q.imagen)).slice(0, CONFIG.senalesAlFinal);
+    return [...teoricas, ...senales];
   }
 
   // Toma preguntas repartidas entre todos los temas para cubrir todo el manual.
-  function elegirPreguntas(cantidad, incluirProfesionales) {
+  function repartirPorTema(disponibles, cantidad) {
     const porTema = {};
-    bancoDisponible(incluirProfesionales).forEach((q) => { (porTema[q.tema] = porTema[q.tema] || []).push(q); });
+    disponibles.forEach((q) => { (porTema[q.tema] = porTema[q.tema] || []).push(q); });
     const grupos = shuffle(Object.values(porTema).map(shuffle));
     const elegidas = [];
     let quedan = true;
@@ -130,6 +143,7 @@
       id: q.id,
       tema: q.tema,
       pregunta: q.pregunta,
+      imagen: q.imagen || null,
       opciones: orden.map((i) => q.opciones[i]),
       correcta: orden.indexOf(q.correcta),
       explicacion: q.explicacion,
@@ -138,14 +152,16 @@
     };
   }
 
-  function iniciarExamen(nombre, cantidad, incluirProfesionales) {
+  function iniciarExamen(nombre, cantidad, incluirProfesionales, modo) {
+    const soloSenales = modo === 'senales';
     examen = {
       id: nuevoId(),
       nombre: nombre || 'Sin nombre',
       inicio: new Date().toISOString(),
       umbral: CONFIG.umbralAprobacion,
-      incluyeProfesionales: incluirProfesionales,
-      preguntas: elegirPreguntas(cantidad, incluirProfesionales).map(prepararPregunta),
+      modo: soloSenales ? 'senales' : 'general',
+      incluyeProfesionales: !soloSenales && incluirProfesionales,
+      preguntas: elegirPreguntas(cantidad, incluirProfesionales, modo).map(prepararPregunta),
       respuestas: [],
       actual: 0,
     };
@@ -179,6 +195,7 @@
       minimoCorrectas: minimo,
       aprobado: correctas >= minimo,
       incluyeProfesionales: !!ex.incluyeProfesionales,
+      modo: ex.modo || 'general',
       preguntas,
     };
   }
@@ -206,17 +223,22 @@
     const enCurso = lsGet(KEY_EN_CURSO, null);
     const nombre = lsGet(KEY_NOMBRE, '');
     const incluirPro = lsGet(KEY_PRO, false) === true;
+    const modoGuardado = lsGet(KEY_MODO, 'general') === 'senales' ? 'senales' : 'general';
     const cantPro = banco.filter((q) => q.profesional).length;
-    const textoBanco = (pro) => {
-      const disp = bancoDisponible(pro);
-      return `Preguntas multiple choice elegidas al azar de un banco de <b>${disp.length}</b> preguntas, repartidas entre ${new Set(disp.map((q) => q.tema)).size} temas.`;
+    const cantSenales = banco.filter((q) => q.imagen).length;
+    const textoBanco = (pro, modo) => {
+      const disp = bancoDisponible(pro, modo);
+      if (modo === 'senales') {
+        return `Ves la imagen de una señal y elegís su nombre, entre <b>${disp.length}</b> señales del anexo del manual.`;
+      }
+      return `Preguntas multiple choice elegidas al azar de un banco de <b>${disp.length}</b> preguntas de ${new Set(disp.map((q) => q.tema)).size} temas y, al final, <b>${CONFIG.senalesAlFinal} señales</b> para reconocer por su imagen.`;
     };
     app.innerHTML = `
       <section class="card">
         <h1>Simulacro del examen teórico</h1>
         <p class="muted">Practicá para la licencia de conducir del Municipio de San Isidro con preguntas basadas en el Manual de Educación Vial.</p>
         <ul class="rules">
-          <li id="texto-banco">${textoBanco(incluirPro)}</li>
+          <li id="texto-banco">${textoBanco(incluirPro, modoGuardado)}</li>
           <li>Para aprobar necesitás al menos el <b>${CONFIG.umbralAprobacion}%</b> de respuestas correctas.</li>
           <li>Al terminar ves cada corrección, la respuesta correcta y en qué página del manual está.</li>
           <li>Cada examen queda guardado en el historial.</li>
@@ -234,13 +256,24 @@
             <label for="nombre">Tu nombre (opcional)</label>
             <input id="nombre" maxlength="60" value="${esc(nombre)}" placeholder="Para identificar tus exámenes en el historial">
           </div>
+          <fieldset class="field modo">
+            <legend>Tipo de examen</legend>
+            <label class="check" for="modo-general">
+              <input type="radio" name="modo" id="modo-general" value="general" ${modoGuardado === 'general' ? 'checked' : ''}>
+              <span>General<span class="check-help">Preguntas de todos los temas del manual y ${CONFIG.senalesAlFinal} señales al final.</span></span>
+            </label>
+            <label class="check" for="modo-senales">
+              <input type="radio" name="modo" id="modo-senales" value="senales" ${modoGuardado === 'senales' ? 'checked' : ''}>
+              <span>Solo señales de tránsito<span class="check-help">Reconocer ${cantSenales} señales por su imagen.</span></span>
+            </label>
+          </fieldset>
           <div class="field">
-            <label for="cantidad">Cantidad de preguntas</label>
+            <label for="cantidad" id="label-cantidad">${modoGuardado === 'senales' ? 'Cantidad de señales' : 'Cantidad de preguntas teóricas'}</label>
             <select id="cantidad" class="btn" style="padding:8px 10px">
               ${CONFIG.opcionesCantidad.map((n) => `<option value="${n}" ${n === CONFIG.cantidadPorDefecto ? 'selected' : ''}>${n}${n === CONFIG.cantidadPorDefecto ? ' (como el examen real)' : ''}</option>`).join('')}
             </select>
           </div>
-          <div class="field">
+          <div class="field" id="campo-pro" ${modoGuardado === 'senales' ? 'hidden' : ''}>
             <label class="check" for="incluir-pro">
               <input type="checkbox" id="incluir-pro" ${incluirPro ? 'checked' : ''}>
               <span>
@@ -254,18 +287,25 @@
       </section>`;
 
     const chkPro = document.getElementById('incluir-pro');
-    chkPro.addEventListener('change', () => {
+    const modoActual = () => (document.getElementById('modo-senales').checked ? 'senales' : 'general');
+    const actualizar = () => {
       lsSet(KEY_PRO, chkPro.checked);
-      document.getElementById('texto-banco').innerHTML = textoBanco(chkPro.checked);
-    });
+      lsSet(KEY_MODO, modoActual());
+      document.getElementById('campo-pro').hidden = modoActual() === 'senales';
+      document.getElementById('label-cantidad').textContent =
+        modoActual() === 'senales' ? 'Cantidad de señales' : 'Cantidad de preguntas teóricas';
+      document.getElementById('texto-banco').innerHTML = textoBanco(chkPro.checked, modoActual());
+    };
+    chkPro.addEventListener('change', actualizar);
+    document.querySelectorAll('input[name="modo"]').forEach((r) => r.addEventListener('change', actualizar));
 
     document.getElementById('form-inicio').addEventListener('submit', (e) => {
       e.preventDefault();
       const n = document.getElementById('nombre').value.trim();
       lsSet(KEY_NOMBRE, n);
-      lsSet(KEY_PRO, chkPro.checked);
+      actualizar();
       if (enCurso && !confirm('Se va a descartar el examen sin terminar. ¿Seguir?')) return;
-      iniciarExamen(n, Number(document.getElementById('cantidad').value), chkPro.checked);
+      iniciarExamen(n, Number(document.getElementById('cantidad').value), chkPro.checked, modoActual());
     });
     if (enCurso) {
       document.getElementById('btn-continuar').onclick = () => { examen = enCurso; renderExamen(); };
@@ -280,16 +320,28 @@
     const total = examen.preguntas.length;
     const respondidas = examen.respuestas.filter((r) => r !== null).length;
     const elegida = examen.respuestas[i];
+    // En el examen general las señales forman una segunda parte al final
+    const enPartes = examen.modo !== 'senales';
+    const inicioSenales = enPartes ? examen.preguntas.findIndex((p) => p.imagen) : -1;
+    const hayParteSenales = inicioSenales > 0;
+    const enSenales = hayParteSenales && i >= inicioSenales;
+    const cantSenales = hayParteSenales ? total - inicioSenales : 0;
+    const titulo = !hayParteSenales ? `Pregunta <b>${i + 1}</b> de ${total}`
+      : enSenales ? `Parte 2 · Señal <b>${i - inicioSenales + 1}</b> de ${cantSenales}`
+      : `Parte 1 · Pregunta <b>${i + 1}</b> de ${inicioSenales}`;
+    const botonMapa = (k) => `<button type="button" data-ir="${k}" class="${examen.respuestas[k] !== null ? 'answered' : ''} ${k === i ? 'current' : ''}">${hayParteSenales && k >= inicioSenales ? k - inicioSenales + 1 : k + 1}</button>`;
 
     app.innerHTML = `
       <section class="card">
         <div class="progress-head">
-          <span>Pregunta <b>${i + 1}</b> de ${total}</span>
-          <span class="muted">${respondidas} respondida(s)</span>
+          <span>${titulo}</span>
+          <span class="muted">${respondidas} de ${total} respondidas</span>
         </div>
         <div class="bar"><span style="width:${(respondidas / total) * 100}%"></span></div>
+        ${i === inicioSenales && hayParteSenales ? `<div class="aviso-parte">Terminaste la parte teórica. Ahora vienen <b>${cantSenales} señales</b>: mirá la imagen y elegí su nombre.</div>` : ''}
         <span class="tema-tag">${esc(q.tema)}</span>
         <p class="question">${esc(q.pregunta)}</p>
+        ${q.imagen ? `<img class="senal-img" src="${esc(q.imagen)}" alt="Señal de tránsito a identificar" width="180" height="180">` : ''}
         <div class="options" role="radiogroup">
           ${q.opciones.map((op, k) => `
             <button type="button" role="radio" aria-checked="${elegida === k}" class="option ${elegida === k ? 'selected' : ''}" data-op="${k}">
@@ -303,9 +355,12 @@
             <button class="btn ${i === total - 1 ? 'btn-primary' : ''}" id="btn-fin" type="button">Finalizar examen</button>
           </div>
         </div>
-        <div class="qmap" aria-label="Ir a pregunta">
-          ${examen.preguntas.map((_, k) => `<button type="button" data-ir="${k}" class="${examen.respuestas[k] !== null ? 'answered' : ''} ${k === i ? 'current' : ''}">${k + 1}</button>`).join('')}
-        </div>
+        ${hayParteSenales ? `
+          <p class="qmap-titulo">Parte 1 · Preguntas</p>
+          <div class="qmap" aria-label="Ir a pregunta">${examen.preguntas.slice(0, inicioSenales).map((_, k) => botonMapa(k)).join('')}</div>
+          <p class="qmap-titulo">Parte 2 · Señales</p>
+          <div class="qmap" aria-label="Ir a señal">${examen.preguntas.slice(inicioSenales).map((_, k) => botonMapa(inicioSenales + k)).join('')}</div>`
+        : `<div class="qmap" aria-label="Ir a pregunta">${examen.preguntas.map((_, k) => botonMapa(k)).join('')}</div>`}
       </section>`;
 
     app.querySelectorAll('.option').forEach((b) => {
@@ -338,6 +393,12 @@
   function renderResultado(res, { recien = false, errorGuardado = false } = {}) {
     setNav(recien ? '' : 'historial');
     const cls = res.aprobado ? 'ok' : 'bad';
+    // Puntaje por parte en el examen general (preguntas teóricas y señales al final)
+    const teoria = res.preguntas.filter((q) => !q.imagen);
+    const senales = res.preguntas.filter((q) => q.imagen);
+    const porPartes = res.modo !== 'senales' && teoria.length && senales.length
+      ? `<p class="small muted" style="margin:4px 0 0">Parte 1, preguntas: <b>${teoria.filter((q) => q.acierto).length}/${teoria.length}</b> · Parte 2, señales: <b>${senales.filter((q) => q.acierto).length}/${senales.length}</b></p>`
+      : '';
     const lista = res.preguntas
       .map((q, n) => ({ q, n }))
       .filter(({ q }) => filtroRevision === 'todas' || (filtroRevision === 'errores' ? !q.acierto : q.acierto));
@@ -349,8 +410,9 @@
           <div class="score ${cls}">${res.porcentaje}%</div>
           <div>
             <p class="verdict ${cls}">${res.aprobado ? 'APROBADO' : 'NO APROBADO'}</p>
-            <p class="muted" style="margin:4px 0 0">${esc(res.nombre)} · ${fmtFecha(res.fecha)} · ${res.incluyeProfesionales ? 'Con preguntas profesionales' : 'Sin preguntas profesionales'}</p>
+            <p class="muted" style="margin:4px 0 0">${esc(res.nombre)} · ${fmtFecha(res.fecha)} · ${res.modo === 'senales' ? 'Examen de señales' : res.incluyeProfesionales ? 'Con preguntas profesionales' : 'Sin preguntas profesionales'}</p>
             <p style="margin:4px 0 0">Respondiste bien <b>${res.correctas} de ${res.total}</b>. Necesitabas al menos ${res.minimoCorrectas} (${res.umbral}%).</p>
+            ${porPartes}
           </div>
         </div>
         <div class="stats">
@@ -391,6 +453,7 @@
               : q.elegida === null ? '<span class="badge warn">Sin responder</span>' : '<span class="badge bad">Incorrecta</span>'}
           </div>
           <p class="question">${esc(q.pregunta)}</p>
+          ${q.imagen ? `<img class="senal-img" src="${esc(q.imagen)}" alt="Señal: ${esc(q.opciones[q.correcta])}" width="120" height="120">` : ''}
           ${q.opciones.map((op, k) => {
             const c = k === q.correcta ? 'correct' : k === q.elegida ? 'wrong' : '';
             const mark = k === q.correcta ? '✓' : k === q.elegida ? '✗' : '';
@@ -441,7 +504,7 @@
           <div class="hist-item">
             <div>
               <div class="when">${fmtFecha(e.fecha)} · ${esc(e.nombre)}</div>
-              <div class="small muted">${e.correctas}/${e.total} correctas · ${e.porcentaje}% · ${fmtDuracion(e.duracionSeg)}${e.incluyeProfesionales ? ' · Con profesionales' : ''}</div>
+              <div class="small muted">${e.correctas}/${e.total} correctas · ${e.porcentaje}% · ${fmtDuracion(e.duracionSeg)}${e.modo === 'senales' ? ' · Señales' : e.incluyeProfesionales ? ' · Con profesionales' : ''}</div>
             </div>
             <div class="btn-row">
               <span class="badge ${e.aprobado ? 'ok' : 'bad'}" style="align-self:center">${e.aprobado ? 'Aprobado' : 'No aprobado'}</span>
