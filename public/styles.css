@@ -83,8 +83,13 @@ nav { display: flex; gap: 4px; }
 
 main { padding-top: 24px; padding-bottom: 24px; }
 
-.foot { color: var(--muted); font-size: 13px; padding-bottom: 32px; }
-.foot span { display: block; margin-top: 4px; }
+.foot {
+  color: var(--muted); font-size: 13px; padding-bottom: 32px;
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;
+}
+.foot-info { min-width: 0; }
+.foot-info span { display: block; margin-top: 4px; }
+.foot-version { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Tarjetas y tipografía */
 .card {
