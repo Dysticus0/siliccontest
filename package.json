@@ -1,5 +1,5 @@
 {
-  "name": "simulacro-licencia-san-isidro",
+  "name": "siliccontest",
   "version": "1.0.0",
   "description": "Simulacro de examen teórico para la licencia de conducir de San Isidro",
   "main": "server.js",

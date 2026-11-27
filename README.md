@@ -1,4 +1,10 @@
-# Simulacro del examen teórico – Licencia de conducir San Isidro
+<img src="public/logo.svg" width="96" alt="Logo de Siliccontest">
+
+# Siliccontest
+
+**Simulacro del examen teórico para la licencia de conducir de San Isidro.**
+
+👉 Probalo online: https://dysticus0.github.io/siliccontest/
 
 Simulacro de examen multiple choice para practicar el examen teórico de la licencia de conducir del Municipio de San Isidro. Las preguntas están elaboradas a partir del *Manual de Educación Vial* del Municipio (edición marzo 2026).
 

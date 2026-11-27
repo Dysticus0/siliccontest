@@ -54,16 +54,27 @@ button { font: inherit; color: inherit; }
 .topbar { background: var(--surface); border-bottom: 1px solid var(--border); }
 .topbar-inner {
   max-width: 860px; margin: 0 auto; padding: 10px 16px;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  /* Logo a la izquierda, título centrado y navegación a la derecha */
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+}
+.brand-logo-btn {
+  grid-column: 1; justify-self: start;
+  background: none; border: 0; padding: 0; cursor: pointer; border-radius: 8px;
 }
 .brand {
-  display: flex; align-items: center; gap: 10px; background: none; border: 0;
-  font-weight: 600; cursor: pointer; padding: 0;
+  grid-column: 2;
+  background: none; border: 0; font-weight: 600; cursor: pointer; padding: 0;
 }
-.brand-mark {
-  display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px;
-  background: var(--primary); color: var(--primary-ink); font-size: 13px; font-weight: 700;
+.topbar nav { grid-column: 3; justify-self: end; }
+@media (max-width: 640px) {
+  /* En pantallas angostas la navegación baja a una segunda fila, centrada */
+  .topbar-inner { row-gap: 6px; }
+  .topbar nav { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
 }
+.brand-logo { display: block; width: 36px; height: 36px; }
+.brand-text { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.15; }
+.brand-name { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+.brand-sub { font-size: 12px; font-weight: 400; color: var(--muted); }
 nav { display: flex; gap: 4px; }
 .navlink {
   background: none; border: 0; padding: 6px 10px; border-radius: 6px; cursor: pointer; color: var(--muted);
@@ -193,5 +204,5 @@ h2 { font-size: 1.2rem; margin: 0 0 12px; }
   h1 { font-size: 1.35rem; }
   .card { padding: 16px; }
   .score { width: 90px; height: 90px; font-size: 1.4rem; }
-  .brand span:last-child { font-size: 14px; }
+  .brand-sub { display: none; }
 }
